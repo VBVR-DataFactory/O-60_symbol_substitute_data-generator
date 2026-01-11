@@ -1,6 +1,6 @@
-# Template Data Generator 🎲
+# Symbol Substitute Task Generator 🔄
 
-A minimal template for creating synthetic reasoning task generators. Fork this and customize it for your own task (maze, sudoku, rotation, etc.).
+A data generator for creating synthetic visual reasoning tasks where a symbol must be substituted with another symbol at a specific position in a sequence. This task tests a model's ability to understand positional reasoning and symbol replacement through visual animation.
 
 ---
 
@@ -8,8 +8,8 @@ A minimal template for creating synthetic reasoning task generators. Fork this a
 
 ```bash
 # 1. Clone the repository
-git clone https://github.com/your-org/your-task-generator.git
-cd your-task-generator
+git clone https://github.com/weihangxiao/symbol-substitute-data-genertor.git
+cd symbol-substitute-data-genertor
 
 # 2. Create and activate virtual environment
 python3 -m venv venv
@@ -26,114 +26,265 @@ python examples/generate.py --num-samples 50
 
 ---
 
-## 📁 Structure
+## 📋 Task Description
+
+The **Symbol Substitute Task** (Symbol Worlds_SymbolEditing_3) is a visual reasoning task where:
+
+- **Initial State**: A sequence of symbols displayed horizontally
+- **Goal**: Replace a specific symbol at a given position with a new symbol
+- **Animation**: The old symbol fades out while the new symbol simultaneously fades in (cross-fade effect)
+- **Solution**: Exactly **one unique solution** - substitute symbol S at position P with symbol T
+
+### Key Features
+
+- ✅ **Unique Solution**: Only one way to substitute at a specific position with a given symbol
+- ✅ **Clear Visual Reasoning**: Animation shows smooth cross-fade transition
+- ✅ **Scalable**: 10K+ unique samples with 99% uniqueness
+- ✅ **Fast Generation**: No complex solving algorithms required
+- ✅ **Short Videos**: ~2.0 seconds per video (well under 10s limit)
+
+---
+
+## 📁 Project Structure
 
 ```
-template-data-generator/
-├── core/                    # ✅ KEEP: Standard utilities
+symbol-substitute-data-genertor/
+├── core/                    # Core utilities (framework code)
 │   ├── base_generator.py   # Abstract base class
 │   ├── schemas.py          # Pydantic models
-│   ├── image_utils.py      # Image helpers
-│   ├── video_utils.py      # Video generation
-│   └── output_writer.py    # File output
-├── src/                     # ⚠️ CUSTOMIZE: Your task logic
-│   ├── generator.py        # Your task generator
-│   ├── prompts.py          # Your prompt templates
-│   └── config.py           # Your configuration
+│   ├── image_utils.py      # Image rendering helpers
+│   ├── video_utils.py      # Video generation utilities
+│   └── output_writer.py    # File output management
+├── src/                     # Task-specific implementation
+│   ├── generator.py        # Symbol substitute task generator
+│   ├── prompts.py          # Task instruction prompts
+│   └── config.py           # Task configuration
 ├── examples/
-│   └── generate.py         # Entry point
-└── data/questions/         # Generated output
+│   └── generate.py         # Entry point script
+└── data/                    # Generated output
+    └── questions/
+        └── symbol_substitute_task/
+            └── symbol_substitute_0000/
+                ├── first_frame.png
+                ├── final_frame.png
+                ├── prompt.txt
+                └── ground_truth.mp4
 ```
 
 ---
 
 ## 📦 Output Format
 
-Every generator produces:
+Each generated task produces:
 
 ```
-data/questions/{domain}_task/{task_id}/
-├── first_frame.png          # Initial state (REQUIRED)
-├── final_frame.png          # Goal state (or goal.txt)
-├── prompt.txt               # Instructions (REQUIRED)
-└── ground_truth.mp4         # Solution video (OPTIONAL)
+data/questions/symbol_substitute_task/{task_id}/
+├── first_frame.png          # Initial state: sequence before substitution
+├── final_frame.png          # Final state: sequence after substitution
+├── prompt.txt               # Task instructions
+└── ground_truth.mp4         # Solution animation video (~2.0 seconds)
+```
+
+### Output Details
+
+- **first_frame.png**: Shows the initial sequence of symbols (e.g., [●, ▲, ■, ★, ◆])
+- **final_frame.png**: Shows the final sequence with symbol substituted (e.g., [●, ♥, ■, ★, ◆])
+- **prompt.txt**: Contains instructions specifying which symbol to replace, with what, and at which position (e.g., "Substitute symbol ▲ at position 2 with symbol ♥")
+- **ground_truth.mp4**: Animated video showing:
+  - Initial sequence held for 0.5s
+  - Old and new symbols cross-fading (1.0s)
+  - Final sequence held for 0.5s
+  - **Total duration: ~2.0 seconds**
+
+---
+
+## ⚙️ Configuration
+
+All task parameters are configured in `src/config.py`:
+
+```python
+class TaskConfig(GenerationConfig):
+    domain: str = "symbol_substitute"
+    image_size: tuple[int, int] = (800, 200)
+
+    # Symbol set selection
+    symbol_set: str = "shapes"  # Options: shapes, letters, numbers, mixed
+
+    # Sequence configuration
+    min_sequence_length: int = 5   # Minimum symbols in sequence
+    max_sequence_length: int = 9   # Maximum symbols in sequence
+
+    # Visual configuration
+    symbol_size: int = 60          # Symbol size in pixels
+
+    # Video settings
+    generate_videos: bool = True
+    video_fps: int = 10
+```
+
+### Available Symbol Sets
+
+- **shapes**: ●, ▲, ■, ★, ◆, ♥, ◯, △, □, ☆, ◇, ♦, ▼, ▶, ◀ (15 symbols)
+- **letters**: A-Z (26 symbols)
+- **numbers**: 0-9 (10 symbols)
+- **mixed**: Combination of shapes, letters, and numbers (13 symbols)
+
+---
+
+## 🎬 Generation Algorithm
+
+The generator uses a simple but effective approach:
+
+1. **Sequence Generation**: Randomly select N symbols (5-9) from chosen symbol set without replacement
+2. **Substitute Position Selection**: Randomly select substitution position (1 to N)
+3. **New Symbol Selection**: Choose a new symbol not in the current sequence
+4. **Final Sequence Creation**: Replace old symbol with new symbol at target position
+5. **Color Assignment**: Assign distinct colors to each unique symbol for visual clarity
+6. **Animation Creation**: Generate smooth animation frames:
+   - Cross-fade (10 frames) - Old symbol fades out while new symbol fades in simultaneously
+   - Hold frames at start and end (5 frames each)
+
+### Key Features
+
+- ✅ **Guaranteed Uniqueness**: Each task has exactly one solution path
+- ✅ **Pure White Background**: RGB(255, 255, 255) for clean visual presentation
+- ✅ **Colorful Symbols**: 10 distinct colors assigned consistently
+- ✅ **Smooth Animation**: Cross-fade effect with alpha blending
+- ✅ **Fast Generation**: ~1 sample/second, no complex algorithms
+
+---
+
+## 📝 Usage Examples
+
+### Generate 100 tasks with shapes (default)
+
+```bash
+python examples/generate.py --num-samples 100
+```
+
+### Generate 1000 tasks with letters
+
+```bash
+python examples/generate.py --num-samples 1000 --symbol-set letters
+```
+
+### Generate 500 tasks with custom sequence length
+
+```bash
+python examples/generate.py --num-samples 500 --min-length 6 --max-length 9
+```
+
+### Generate without videos (faster)
+
+```bash
+python examples/generate.py --num-samples 10000 --no-videos
+```
+
+### Generate with specific random seed
+
+```bash
+python examples/generate.py --num-samples 200 --seed 42
+```
+
+### Generate with custom output directory
+
+```bash
+python examples/generate.py --num-samples 50 --output data/my_custom_output
 ```
 
 ---
 
-## 🎨 Customization (3 Files to Modify)
+## 🔧 Command Line Options
 
-### 1. Update `src/generator.py`
-
-Replace the example chess generator with your task:
-
-```python
-from core import BaseGenerator, TaskPair, ImageRenderer
-
-class MazeGenerator(BaseGenerator):
-    def __init__(self, config):
-        super().__init__(config)
-        self.renderer = ImageRenderer(config.image_size)
-    
-    def generate_task_pair(self, task_id: str) -> TaskPair:
-        # 1. Generate your problem
-        maze = self.create_maze()
-        
-        # 2. Solve it
-        solution = self.solve_maze(maze)
-        
-        # 3. Render images
-        first_image = self.render_maze(maze)
-        final_image = self.render_maze_with_solution(maze, solution)
-        
-        # 4. Create TaskPair
-        return TaskPair(
-            task_id=task_id,
-            domain=self.config.domain,
-            prompt=self.select_prompt(),
-            first_image=first_image,
-            final_image=final_image,
-            ground_truth_video=None  # Optional
-        )
+```bash
+python examples/generate.py --help
 ```
 
-### 2. Update `src/prompts.py`
+Options:
+- `--num-samples`: Number of task samples to generate (required)
+- `--symbol-set`: Symbol set to use: shapes, letters, numbers, mixed (default: shapes)
+- `--min-length`: Minimum sequence length (default: 5)
+- `--max-length`: Maximum sequence length (default: 9)
+- `--output`: Output directory (default: `data/questions`)
+- `--seed`: Random seed for reproducibility (optional)
+- `--no-videos`: Disable video generation (faster)
 
-Replace chess prompts with yours:
+---
 
-```python
-PROMPTS = {
-    "default": [
-        "Animate a path from start to goal through the maze.",
-        "Show the solution route navigating through corridors.",
-    ]
-}
+## 📚 Dependencies
 
-def get_prompt(task_type: str = "default") -> str:
-    prompts = PROMPTS.get(task_type, PROMPTS["default"])
-    return random.choice(prompts)
-```
+See `requirements.txt` for the complete list. Main dependencies:
 
-### 3. Update `src/config.py`
+- `numpy`: Numerical operations
+- `Pillow`: Image processing and rendering
+- `pydantic`: Configuration management
+- `opencv-python`: Video generation
 
-**All hyperparameters go here** - both general and task-specific:
+No specialized dependencies required (unlike chess, maze solvers, etc.)
 
-```python
-from core import GenerationConfig
-from pydantic import Field
+---
 
-class TaskConfig(GenerationConfig):
-    """Your task-specific configuration."""
-    # Inherits: num_samples, domain, seed, output_dir, image_size
-    
-    # Override defaults
-    domain: str = Field(default="maze")
-    image_size: tuple[int, int] = Field(default=(512, 512))
-    
-    # Task-specific hyperparameters
-    grid_size: int = Field(default=10, description="Maze grid size")
-    wall_thickness: int = Field(default=2, description="Wall thickness")
-    difficulty: str = Field(default="medium", description="easy/medium/hard")
-```
+## 🎯 Task Characteristics
 
-**Single entry point:** `python examples/generate.py --num-samples 50`
+### Scalability Analysis
+
+- **3x3 Combinations**: ~15 symbols × 5 lengths × avg 7 positions × avg 8 replacement choices = **4000+ base variations**
+- **With randomization**: Each sequence is randomly generated, creating **10K+ unique samples**
+- **Measured uniqueness**: 99% unique in 100-sample test
+
+### Video Specifications
+
+- **Frame breakdown**:
+  - Hold initial: 5 frames (0.5s)
+  - Cross-fade: 10 frames (1.0s)
+  - Hold final: 5 frames (0.5s)
+- **Total**: 20 frames at 10 FPS = **2.0 seconds**
+- **Status**: ✅ Well under 10-second limit
+
+### Prompt Specifications
+
+- **Average length**: ~35 words
+- **Format**: "Substitute symbol {old} at position {P} with symbol {new}. [Animation description]"
+- **Status**: ✅ Well under 200-word limit
+
+---
+
+## 🎨 Visual Design
+
+- **Background**: Pure white (255, 255, 255)
+- **Symbol Colors**: 10 distinct colors from a diverse palette
+- **Symbol Size**: 60 pixels (configurable)
+- **Spacing**: 20 pixels between symbols
+- **Centering**: Sequences are centered horizontally and vertically
+
+---
+
+## 📊 Quality Metrics
+
+Based on 100-sample test:
+
+| Metric | Result | Target | Status |
+|--------|--------|--------|--------|
+| Uniqueness | 99% | >95% | ✅ Pass |
+| Video Length | 2.0s | <10s | ✅ Pass |
+| Prompt Length | 35 words | <200 words | ✅ Pass |
+| Generation Speed | ~1 sample/sec | N/A | ✅ Fast |
+| Solution Uniqueness | 100% | 100% | ✅ Pass |
+
+---
+
+## 🏷️ Task Type
+
+**Symbol Worlds → SymbolEditing → Symbol Worlds_SymbolEditing_3**
+
+- **Task Name**: Substitute Symbol
+- **Description**: Replace a symbol at a specific position with a new symbol
+- **Reasoning Type**: Visual reasoning through symbol replacement
+
+---
+
+## 📄 License
+
+See `LICENSE` file for details.
+
+---

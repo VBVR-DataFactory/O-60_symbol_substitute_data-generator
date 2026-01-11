@@ -1,9 +1,15 @@
 """
 ╔══════════════════════════════════════════════════════════════════════════════╗
-║                           YOUR TASK PROMPTS                                   ║
+║                    SYMBOL SUBSTITUTE TASK PROMPTS                             ║
 ║                                                                               ║
-║  CUSTOMIZE THIS FILE to define prompts/instructions for your task.            ║
-║  Prompts are selected based on task type and returned to the model.           ║
+║  Prompt templates for Symbol Worlds_SymbolEditing_3:                         ║
+║  Substitute a symbol at a specific position with a new symbol.               ║
+║                                                                               ║
+║  Each prompt clearly specifies:                                               ║
+║  - Which symbol to replace (old symbol)                                       ║
+║  - What to replace it with (new symbol)                                       ║
+║  - At which position (1-indexed)                                              ║
+║  - The animation sequence (cross-fade effect)                                 ║
 ╚══════════════════════════════════════════════════════════════════════════════╝
 """
 
@@ -14,44 +20,33 @@ import random
 #  DEFINE YOUR PROMPTS
 # ══════════════════════════════════════════════════════════════════════════════
 
-PROMPTS = {
-    "default": [
-        "Animate the chess pieces to show white delivering checkmate in one move. The winning piece should move smoothly to its destination square, capturing if necessary, resulting in the opponent's king being in checkmate.",
-        "Show white making the winning move that checkmates black. The piece should move clearly from its starting position to deliver mate, with smooth animation.",
-        "Demonstrate white's checkmate in one. Move the attacking piece to its final square, showing the decisive blow that ends the game.",
-    ],
-    
-    "back_rank": [
-        "Show the rook or queen delivering a back-rank checkmate. The attacking piece should slide horizontally along the back rank to trap the enemy king.",
-        "Animate a classic back-rank mate. The attacking piece moves along the eighth rank to checkmate the trapped king behind its own pawns.",
-    ],
-    
-    "queen_mate": [
-        "Show the queen delivering checkmate. The queen should move decisively to its final square, supported by the king, to trap the opponent's king.",
-        "Animate the queen administering checkmate. She should glide to her destination, working with the friendly king to corner the enemy monarch.",
-    ],
-    
-    "rook_mate": [
-        "Show the rook delivering checkmate. The rook should move cleanly along its file or rank to trap the enemy king.",
-        "Animate the rook administering mate. It should slide smoothly to its destination square, cutting off the king's escape.",
-    ],
-}
+PROMPT_TEMPLATES = [
+    "Substitute symbol {old_symbol} at position {position} with symbol {new_symbol}. The video shows the old symbol fading out while the new symbol simultaneously fades in at the same position.",
+
+    "Replace symbol {old_symbol} at position {position} with symbol {new_symbol}. Animate the substitution with a cross-fade effect, where the old symbol gradually disappears as the new symbol appears.",
+
+    "Substitute the symbol {old_symbol} at position {position} with {new_symbol}. The substitution is shown by cross-fading: the original symbol fades out while the replacement symbol fades in at the same location.",
+
+    "Replace the symbol {old_symbol} at position {position} with symbol {new_symbol}. Show a smooth transition where both symbols are visible briefly during the cross-fade, with the old one fading out and the new one fading in.",
+]
 
 
-def get_prompt(task_type: str = "default") -> str:
+def get_prompt(old_symbol: str, new_symbol: str, position: int) -> str:
     """
-    Select a random prompt for the given task type.
-    
+    Generate a prompt for symbol substitution task.
+
     Args:
-        task_type: Type of task (key in PROMPTS dict)
-        
+        old_symbol: The symbol to be replaced
+        new_symbol: The symbol to replace with
+        position: The 1-indexed position of the symbol to substitute
+
     Returns:
-        Random prompt string from the specified type
+        Formatted prompt string
     """
-    prompts = PROMPTS.get(task_type, PROMPTS["default"])
-    return random.choice(prompts)
+    template = random.choice(PROMPT_TEMPLATES)
+    return template.format(old_symbol=old_symbol, new_symbol=new_symbol, position=position)
 
 
-def get_all_prompts(task_type: str = "default") -> list[str]:
-    """Get all prompts for a given task type."""
-    return PROMPTS.get(task_type, PROMPTS["default"])
+def get_all_prompts() -> list[str]:
+    """Get all prompt templates."""
+    return PROMPT_TEMPLATES
