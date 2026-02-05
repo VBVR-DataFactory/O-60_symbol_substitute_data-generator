@@ -1,11 +1,11 @@
 """Symbol Substitute Task generator - Replace symbol at position."""
 
 import random
-from typing import List, Optional
+from typing import List, Optional, Tuple
 from PIL import Image, ImageDraw, ImageFont
 from core import BaseGenerator, TaskPair, ImageRenderer
 from core.video_utils import VideoGenerator
-from .config import TaskConfig
+from .config import TaskConfig, ALL_COLORS, RAINBOW_COLORS
 from .prompts import get_prompt
 
 
@@ -16,20 +16,6 @@ SYMBOL_SETS = {
     "numbers": list("0123456789"),
     "mixed": ["●", "▲", "■", "★", "A", "B", "C", "1", "2", "3", "X", "Y", "Z"]
 }
-
-# Colors for symbols (diverse palette)
-SYMBOL_COLORS = [
-    (220, 60, 60),    # Red
-    (60, 60, 220),    # Blue
-    (60, 180, 60),    # Green
-    (220, 160, 60),   # Orange
-    (160, 60, 220),   # Purple
-    (60, 180, 180),   # Cyan
-    (220, 60, 160),   # Pink
-    (100, 150, 60),   # Olive
-    (220, 120, 60),   # Coral
-    (80, 80, 200),    # Indigo
-]
 
 
 class SymbolSubstituteGenerator(BaseGenerator):
@@ -49,44 +35,57 @@ class SymbolSubstituteGenerator(BaseGenerator):
         self.bg_color = (255, 255, 255)  # Pure white background
         self.border_color = (60, 60, 60)
         self.text_color = (40, 40, 40)
+        
+        # Color names list for random selection
+        self.all_color_names = list(ALL_COLORS.keys())
+        self.rainbow_color_names = list(RAINBOW_COLORS.keys())
 
     def generate_task_pair(self, task_id: str) -> TaskPair:
-        """Generate one symbol substitution task."""
-        # Generate initial sequence
+        """Generate one symbol substitution task with colored symbols."""
+        # Generate initial sequence (now with colors, allowing duplicate symbol types)
         seq_length = random.randint(self.config.min_sequence_length, self.config.max_sequence_length)
-
-        # Pick symbols without replacement for the sequence
-        sequence = random.sample(self.symbols, seq_length)
-
-        # Pick which symbol to substitute (random position)
-        substitute_position = random.randint(0, len(sequence) - 1)
-        old_symbol = sequence[substitute_position]
-
-        # Pick a new symbol (not in current sequence)
-        available_symbols = [s for s in self.symbols if s not in sequence]
-        new_symbol = random.choice(available_symbols)
-
+        
+        # Pick which position to substitute FIRST (ensures equal probability for all positions)
+        substitute_position = random.randint(0, seq_length - 1)
+        
+        # Generate sequence: each position is (symbol_type, color_name)
+        # The position to be substituted MUST use a rainbow color (for prompt clarity)
+        sequence = []
+        for i in range(seq_length):
+            symbol_type = random.choice(self.symbols)
+            if i == substitute_position:
+                # This is the position to be substituted - use rainbow color
+                color_name = random.choice(self.rainbow_color_names)
+            else:
+                # Other positions can use any of the 20 colors
+                color_name = random.choice(self.all_color_names)
+            sequence.append((symbol_type, color_name))
+        
+        old_symbol, old_color = sequence[substitute_position]
+        
+        # Pick a new symbol (can be any type, but color must be rainbow for prompt clarity)
+        new_symbol = random.choice(self.symbols)
+        new_color = random.choice(self.rainbow_color_names)  # Only rainbow colors for new symbol
+        
         # Create final sequence (with substituted symbol)
-        final_sequence = sequence[:substitute_position] + [new_symbol] + sequence[substitute_position + 1:]
-
-        # Assign colors to symbols (including both old and new)
-        all_symbols = set(sequence + [new_symbol])
-        color_map = self._create_color_map(list(all_symbols))
-
+        final_sequence = sequence.copy()
+        final_sequence[substitute_position] = (new_symbol, new_color)
+        
         # Render images
-        first_image = self._render_sequence(sequence, color_map)
-        final_image = self._render_sequence(final_sequence, color_map)
-
+        first_image = self._render_sequence(sequence)
+        final_image = self._render_sequence(final_sequence)
+        
         # Generate video if enabled
         video_path = None
         if self.config.generate_videos and self.video_generator:
             video_path = self._generate_video(
-                sequence, final_sequence, old_symbol, new_symbol, substitute_position, color_map, task_id
+                sequence, final_sequence, old_symbol, old_color, 
+                new_symbol, new_color, substitute_position, task_id
             )
-
-        # Get prompt (1-indexed position for human readability)
-        prompt = get_prompt(old_symbol, new_symbol, substitute_position + 1)
-
+        
+        # Get prompt (1-indexed position, old symbol identified by position, new symbol with color)
+        prompt = get_prompt(old_symbol, new_symbol, new_color, substitute_position + 1)
+        
         return TaskPair(
             task_id=task_id,
             domain=self.config.domain,
@@ -96,15 +95,8 @@ class SymbolSubstituteGenerator(BaseGenerator):
             ground_truth_video=video_path
         )
 
-    def _create_color_map(self, all_symbols: List[str]) -> dict:
-        """Assign consistent colors to symbols."""
-        color_map = {}
-        for i, symbol in enumerate(set(all_symbols)):
-            color_map[symbol] = SYMBOL_COLORS[i % len(SYMBOL_COLORS)]
-        return color_map
-
-    def _render_sequence(self, sequence: List[str], color_map: dict) -> Image.Image:
-        """Render a sequence of symbols."""
+    def _render_sequence(self, sequence: List[Tuple[str, str]]) -> Image.Image:
+        """Render a sequence of colored symbols (centered dynamically)."""
         width, height = self.config.image_size
         img = Image.new("RGB", (width, height), self.bg_color)
         draw = ImageDraw.Draw(img)
@@ -124,9 +116,36 @@ class SymbolSubstituteGenerator(BaseGenerator):
         font = self._get_unicode_font(font_size)
 
         # Draw each symbol
-        for i, symbol in enumerate(sequence):
+        for i, (symbol_type, color_name) in enumerate(sequence):
             x = start_x + i * spacing
-            self._draw_symbol(draw, symbol, x, center_y, symbol_size, color_map[symbol], font)
+            rgb_color = ALL_COLORS[color_name]
+            self._draw_symbol(draw, symbol_type, x, center_y, symbol_size, rgb_color, font)
+
+        return img
+
+    def _render_sequence_fixed(self, sequence: List[Tuple[str, str]], fixed_start_x: int) -> Image.Image:
+        """Render a sequence of colored symbols using a fixed starting position (prevents jumping)."""
+        width, height = self.config.image_size
+        img = Image.new("RGB", (width, height), self.bg_color)
+        draw = ImageDraw.Draw(img)
+
+        if not sequence:
+            return img
+
+        # Calculate symbol spacing
+        symbol_size = self.config.symbol_size
+        spacing = symbol_size + 20
+        center_y = height // 2
+
+        # Load font - try fonts with good Unicode symbol support
+        font_size = symbol_size
+        font = self._get_unicode_font(font_size)
+
+        # Draw each symbol using fixed start position
+        for i, (symbol_type, color_name) in enumerate(sequence):
+            x = fixed_start_x + i * spacing
+            rgb_color = ALL_COLORS[color_name]
+            self._draw_symbol(draw, symbol_type, x, center_y, symbol_size, rgb_color, font)
 
         return img
 
@@ -168,9 +187,9 @@ class SymbolSubstituteGenerator(BaseGenerator):
         # Final fallback
         return ImageFont.load_default()
 
-    def _generate_video(self, initial_seq: List[str], final_seq: List[str],
-                       old_symbol: str, new_symbol: str, substitute_pos: int, color_map: dict,
-                       task_id: str) -> Optional[str]:
+    def _generate_video(self, initial_seq: List[Tuple[str, str]], final_seq: List[Tuple[str, str]],
+                       old_symbol: str, old_color: str, new_symbol: str, new_color: str,
+                       substitute_pos: int, task_id: str) -> Optional[str]:
         """Generate video showing the substitution animation."""
         import tempfile
         from pathlib import Path
@@ -180,95 +199,146 @@ class SymbolSubstituteGenerator(BaseGenerator):
         video_path = temp_dir / f"{task_id}_ground_truth.mp4"
 
         frames = self._create_animation_frames(
-            initial_seq, final_seq, old_symbol, new_symbol, substitute_pos, color_map
+            initial_seq, final_seq, old_symbol, old_color, new_symbol, new_color, substitute_pos
         )
         result = self.video_generator.create_video_from_frames(frames, video_path)
         return str(result) if result else None
 
-    def _create_animation_frames(self, initial_seq: List[str], final_seq: List[str],
-                                 old_symbol: str, new_symbol: str, substitute_pos: int, color_map: dict,
+    def _create_animation_frames(self, initial_seq: List[Tuple[str, str]], final_seq: List[Tuple[str, str]],
+                                 old_symbol: str, old_color: str, new_symbol: str, new_color: str,
+                                 substitute_pos: int,
                                  hold_frames: int = 5,
-                                 crossfade_frames: int = 10) -> List[Image.Image]:
-        """Create animation frames for symbol substitution using cross-fade."""
+                                 fadeout_frames: int = 6,
+                                 fadein_frames: int = 6) -> List[Image.Image]:
+        """Create animation frames for symbol substitution: fade-out then fade-in (clean process)."""
         frames = []
-
-        # Show initial sequence
-        frames.extend([self._render_sequence(initial_seq, color_map)] * hold_frames)
-
-        # Phase: Cross-fade from old symbol to new symbol
-        for i in range(crossfade_frames):
-            progress = (i + 1) / crossfade_frames
-            frame = self._render_crossfade_frame(initial_seq, new_symbol, substitute_pos,
-                                                 color_map, progress)
-            frames.append(frame)
-
-        # Show final sequence
-        frames.extend([self._render_sequence(final_seq, color_map)] * hold_frames)
-
-        return frames
-
-    def _render_crossfade_frame(self, sequence: List[str], new_symbol: str,
-                                substitute_pos: int, color_map: dict,
-                                progress: float) -> Image.Image:
-        """Render frame with cross-fade between old and new symbol."""
+        
+        # Calculate fixed center position (prevents any jumping)
         width, height = self.config.image_size
         symbol_size = self.config.symbol_size
         spacing = symbol_size + 20
+        total_width = len(initial_seq) * spacing - 20
+        fixed_start_x = (width - total_width) // 2  # Fixed for entire animation
+
+        # Show initial sequence (using fixed position)
+        frames.extend([self._render_sequence_fixed(initial_seq, fixed_start_x)] * hold_frames)
+
+        # Phase 1: Fade out old symbol (only the target symbol disappears)
+        for i in range(fadeout_frames):
+            progress = (i + 1) / fadeout_frames
+            frame = self._render_fadeout_frame(initial_seq, substitute_pos, progress, fixed_start_x)
+            frames.append(frame)
+
+        # Phase 2: Fade in new symbol (new symbol gradually appears)
+        for i in range(fadein_frames):
+            progress = (i + 1) / fadein_frames
+            frame = self._render_fadein_frame(initial_seq, new_symbol, new_color, substitute_pos, 
+                                             progress, fixed_start_x)
+            frames.append(frame)
+
+        # Show final sequence (using fixed position)
+        frames.extend([self._render_sequence_fixed(final_seq, fixed_start_x)] * hold_frames)
+
+        return frames
+
+    def _render_fadeout_frame(self, sequence: List[Tuple[str, str]], substitute_pos: int,
+                              progress: float, fixed_start_x: int) -> Image.Image:
+        """Render frame with old symbol fading out (only target symbol changes)."""
+        width, height = self.config.image_size
+        symbol_size = self.config.symbol_size
+        spacing = symbol_size + 20
+        center_y = height // 2
 
         # Create base image
         img = Image.new('RGB', (width, height), self.bg_color)
         draw = ImageDraw.Draw(img)
 
-        # Calculate layout
-        total_width = len(sequence) * spacing - 20
-        start_x = (width - total_width) // 2
-        center_y = height // 2
-
-        # Load font - try fonts with good Unicode symbol support
+        # Load font
         font_size = symbol_size
         font = self._get_unicode_font(font_size)
 
-        # Draw all symbols
-        for i, symbol in enumerate(sequence):
-            x = start_x + i * spacing
-            if i == substitute_pos:
-                # Draw cross-fading symbols
-                old_alpha = int(255 * (1 - progress))
-                new_alpha = int(255 * progress)
+        # STEP 1: Draw all normal symbols FIRST (not the fading one)
+        for i, (symbol_type, color_name) in enumerate(sequence):
+            if i != substitute_pos:
+                x = fixed_start_x + i * spacing
+                rgb_color = ALL_COLORS[color_name]
+                self._draw_symbol(draw, symbol_type, x, center_y, symbol_size, rgb_color, font)
 
-                # Create overlay for alpha blending
-                overlay = Image.new('RGBA', (width, height), (0, 0, 0, 0))
-                overlay_draw = ImageDraw.Draw(overlay)
+        # STEP 2: Now handle the fading symbol with alpha composite
+        if substitute_pos < len(sequence):
+            symbol_type, color_name = sequence[substitute_pos]
+            x = fixed_start_x + substitute_pos * spacing
+            alpha = int(255 * (1 - progress))  # 255 -> 0
+            
+            # Create overlay for alpha blending
+            overlay = Image.new('RGBA', (width, height), (0, 0, 0, 0))
+            overlay_draw = ImageDraw.Draw(overlay)
 
-                # Get text bounding box for both symbols (for centering)
-                old_bbox = overlay_draw.textbbox((0, 0), symbol, font=font)
-                old_text_width = old_bbox[2] - old_bbox[0]
-                old_text_height = old_bbox[3] - old_bbox[1]
-                old_text_x = x - old_text_width // 2
-                old_text_y = center_y - old_text_height // 2
+            # Get text bounding box for centering
+            bbox = overlay_draw.textbbox((0, 0), symbol_type, font=font)
+            text_width = bbox[2] - bbox[0]
+            text_height = bbox[3] - bbox[1]
+            text_x = x - text_width // 2
+            text_y = center_y - text_height // 2
 
-                new_bbox = overlay_draw.textbbox((0, 0), new_symbol, font=font)
-                new_text_width = new_bbox[2] - new_bbox[0]
-                new_text_height = new_bbox[3] - new_bbox[1]
-                new_text_x = x - new_text_width // 2
-                new_text_y = center_y - new_text_height // 2
+            # Draw old symbol with fading alpha
+            rgb_color = ALL_COLORS[color_name]
+            rgba_color = (*rgb_color, alpha)
+            overlay_draw.text((text_x, text_y), symbol_type, fill=rgba_color, font=font)
 
-                # Draw old symbol with fading out alpha
-                old_color = color_map[symbol]
-                old_rgba_color = (*old_color, old_alpha)
-                overlay_draw.text((old_text_x, old_text_y), symbol, fill=old_rgba_color, font=font)
+            # Composite
+            img = img.convert('RGBA')
+            img = Image.alpha_composite(img, overlay)
+            img = img.convert('RGB')
 
-                # Draw new symbol with fading in alpha
-                new_color = color_map[new_symbol]
-                new_rgba_color = (*new_color, new_alpha)
-                overlay_draw.text((new_text_x, new_text_y), new_symbol, fill=new_rgba_color, font=font)
+        return img
 
-                # Composite
-                img = img.convert('RGBA')
-                img = Image.alpha_composite(img, overlay)
-                img = img.convert('RGB')
-            else:
-                # Draw normal symbol
-                self._draw_symbol(draw, symbol, x, center_y, symbol_size, color_map[symbol], font)
+    def _render_fadein_frame(self, sequence: List[Tuple[str, str]], new_symbol: str, new_color: str,
+                            substitute_pos: int, progress: float, fixed_start_x: int) -> Image.Image:
+        """Render frame with new symbol fading in (only target symbol changes)."""
+        width, height = self.config.image_size
+        symbol_size = self.config.symbol_size
+        spacing = symbol_size + 20
+        center_y = height // 2
+
+        # Create base image
+        img = Image.new('RGB', (width, height), self.bg_color)
+        draw = ImageDraw.Draw(img)
+
+        # Load font
+        font_size = symbol_size
+        font = self._get_unicode_font(font_size)
+
+        # STEP 1: Draw all normal symbols FIRST (not the position being substituted)
+        for i, (symbol_type, color_name) in enumerate(sequence):
+            if i != substitute_pos:
+                x = fixed_start_x + i * spacing
+                rgb_color = ALL_COLORS[color_name]
+                self._draw_symbol(draw, symbol_type, x, center_y, symbol_size, rgb_color, font)
+
+        # STEP 2: Now handle the fading-in new symbol with alpha composite
+        x = fixed_start_x + substitute_pos * spacing
+        alpha = int(255 * progress)  # 0 -> 255
+        
+        # Create overlay for alpha blending
+        overlay = Image.new('RGBA', (width, height), (0, 0, 0, 0))
+        overlay_draw = ImageDraw.Draw(overlay)
+
+        # Get text bounding box for centering
+        bbox = overlay_draw.textbbox((0, 0), new_symbol, font=font)
+        text_width = bbox[2] - bbox[0]
+        text_height = bbox[3] - bbox[1]
+        text_x = x - text_width // 2
+        text_y = center_y - text_height // 2
+
+        # Draw new symbol with fading in alpha
+        rgb_color = ALL_COLORS[new_color]
+        rgba_color = (*rgb_color, alpha)
+        overlay_draw.text((text_x, text_y), new_symbol, fill=rgba_color, font=font)
+
+        # Composite
+        img = img.convert('RGBA')
+        img = Image.alpha_composite(img, overlay)
+        img = img.convert('RGB')
 
         return img

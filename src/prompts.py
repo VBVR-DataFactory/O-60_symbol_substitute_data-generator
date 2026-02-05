@@ -2,51 +2,45 @@
 ╔══════════════════════════════════════════════════════════════════════════════╗
 ║                    SYMBOL SUBSTITUTE TASK PROMPTS                             ║
 ║                                                                               ║
-║  Prompt templates for Symbol Worlds_SymbolEditing_3:                         ║
+║  Unified prompt template for Symbol Worlds_SymbolEditing_3:                  ║
 ║  Substitute a symbol at a specific position with a new symbol.               ║
 ║                                                                               ║
 ║  Each prompt clearly specifies:                                               ║
-║  - Which symbol to replace (old symbol)                                       ║
-║  - What to replace it with (new symbol)                                       ║
-║  - At which position (1-indexed)                                              ║
-║  - The animation sequence (cross-fade effect)                                 ║
+║  - Which symbol to replace (emoji at position)                               ║
+║  - What to replace it with (color description + emoji)                       ║
+║  - The animation sequence (fade-out then fade-in)                             ║
 ╚══════════════════════════════════════════════════════════════════════════════╝
 """
-
-import random
 
 
 # ══════════════════════════════════════════════════════════════════════════════
 #  DEFINE YOUR PROMPTS
 # ══════════════════════════════════════════════════════════════════════════════
 
-PROMPT_TEMPLATES = [
-    "Substitute symbol {old_symbol} at position {position} with symbol {new_symbol}. The video shows the old symbol fading out while the new symbol simultaneously fades in at the same position.",
-
-    "Replace symbol {old_symbol} at position {position} with symbol {new_symbol}. Animate the substitution with a cross-fade effect, where the old symbol gradually disappears as the new symbol appears.",
-
-    "Substitute the symbol {old_symbol} at position {position} with {new_symbol}. The substitution is shown by cross-fading: the original symbol fades out while the replacement symbol fades in at the same location.",
-
-    "Replace the symbol {old_symbol} at position {position} with symbol {new_symbol}. Show a smooth transition where both symbols are visible briefly during the cross-fade, with the old one fading out and the new one fading in.",
-]
+# Unified prompt template (position identifies old symbol, color describes new symbol)
+PROMPT_TEMPLATE = (
+    "Substitute {old_symbol} at position {position} with a {new_color} {new_symbol}. "
+    "The animation shows the old symbol fading out completely, "
+    "then the new symbol gradually fading in at the same position."
+)
 
 
-def get_prompt(old_symbol: str, new_symbol: str, position: int) -> str:
+def get_prompt(old_symbol: str, new_symbol: str, new_color: str, position: int) -> str:
     """
     Generate a prompt for symbol substitution task.
 
     Args:
-        old_symbol: The symbol to be replaced
-        new_symbol: The symbol to replace with
+        old_symbol: The symbol emoji to be replaced (e.g., '●')
+        new_symbol: The symbol emoji to replace with (e.g., '■')
+        new_color: The color name of the new symbol (e.g., 'red', 'blue')
         position: The 1-indexed position of the symbol to substitute
 
     Returns:
-        Formatted prompt string
+        Formatted prompt string (e.g., "Substitute ● at position 3 with red的■. The animation shows...")
     """
-    template = random.choice(PROMPT_TEMPLATES)
-    return template.format(old_symbol=old_symbol, new_symbol=new_symbol, position=position)
-
-
-def get_all_prompts() -> list[str]:
-    """Get all prompt templates."""
-    return PROMPT_TEMPLATES
+    return PROMPT_TEMPLATE.format(
+        old_symbol=old_symbol,
+        new_symbol=new_symbol,
+        new_color=new_color,
+        position=position
+    )

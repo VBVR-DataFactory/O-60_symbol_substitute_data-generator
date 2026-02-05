@@ -39,7 +39,8 @@ class VideoGenerator:
         
         # Use H.264 for mp4 (better compatibility) or XVID for avi
         if output_format == "mp4":
-            self.codec = 'mp4v'  # Most compatible mp4 codec
+            # Try multiple H.264 codecs before falling back to mp4v
+            self.codec = self._select_codec()
             self.extension = '.mp4'
         else:
             self.codec = 'XVID'
@@ -52,6 +53,34 @@ class VideoGenerator:
     def is_available() -> bool:
         """Check if video generation is available."""
         return CV2_AVAILABLE
+    
+    def _select_codec(self) -> str:
+        """
+        Select the best available video codec (H.264 preferred).
+        Try multiple H.264 codec names before falling back to mp4v.
+        """
+        # Try H.264 codecs in order of preference (better compatibility, no green screen)
+        h264_codecs = ['avc1', 'H264', 'X264']
+        
+        for codec_name in h264_codecs:
+            try:
+                fourcc = cv2.VideoWriter_fourcc(*codec_name)
+                # Test if codec is available by creating a dummy writer
+                test_writer = cv2.VideoWriter(
+                    'test.mp4', fourcc, self.fps, (100, 100), isColor=True
+                )
+                if test_writer.isOpened():
+                    test_writer.release()
+                    import os
+                    if os.path.exists('test.mp4'):
+                        os.remove('test.mp4')
+                    return codec_name
+                test_writer.release()
+            except Exception:
+                continue
+        
+        # Fallback to mp4v if no H.264 codec available
+        return 'mp4v'
     
     def create_video_from_frames(
         self,
@@ -91,7 +120,8 @@ class VideoGenerator:
             str(output_path),
             fourcc,
             self.fps,
-            (width, height)
+            (width, height),
+            isColor=True  # Explicitly set color mode
         )
         
         # Write frames
@@ -102,7 +132,7 @@ class VideoGenerator:
             
             # Convert PIL Image to OpenCV format (BGR)
             frame_rgb = frame.convert('RGB')
-            frame_array = np.array(frame_rgb)
+            frame_array = np.array(frame_rgb, dtype=np.uint8)  # Ensure uint8 type
             frame_bgr = cv2.cvtColor(frame_array, cv2.COLOR_RGB2BGR)
             
             writer.write(frame_bgr)

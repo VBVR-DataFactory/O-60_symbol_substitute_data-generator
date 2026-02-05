@@ -97,9 +97,6 @@ Examples:
     symbol_desc = symbol_set_names[args.symbol_set]
 
     print(f"🔄 Generating {args.num_samples} symbol substitution tasks...")
-    print(f"   Symbol set: {symbol_desc}")
-    print(f"   Sequence length: {args.min_length}-{args.max_length}")
-    print(f"   Videos: {'disabled' if args.no_videos else 'enabled'}")
     print()
 
     # Configure symbol substitution task generation
