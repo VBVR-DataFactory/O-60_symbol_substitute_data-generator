@@ -71,17 +71,21 @@ class SymbolSubstituteGenerator(BaseGenerator):
         final_sequence = sequence.copy()
         final_sequence[substitute_position] = (new_symbol, new_color)
         
-        # Render images
-        first_image = self._render_sequence(sequence)
-        final_image = self._render_sequence(final_sequence)
+        # Generate animation frames first to ensure alignment
+        frames = self._create_animation_frames(sequence, final_sequence, old_symbol, old_color, new_symbol, new_color, substitute_position)
+        
+        # Extract first and final images from frames
+        first_image = frames[0]
+        final_image = frames[-1]
         
         # Generate video if enabled
         video_path = None
         if self.config.generate_videos and self.video_generator:
-            video_path = self._generate_video(
-                sequence, final_sequence, old_symbol, old_color, 
-                new_symbol, new_color, substitute_position, task_id
-            )
+            temp_dir = Path(tempfile.gettempdir()) / f"{self.config.domain}_videos"
+            temp_dir.mkdir(parents=True, exist_ok=True)
+            video_path = temp_dir / f"{task_id}_ground_truth.mp4"
+            result = self.video_generator.create_video_from_frames(frames, video_path)
+            video_path = str(result) if result else None
         
         # Get prompt (1-indexed position, old symbol identified by position, new symbol with color)
         prompt = get_prompt(old_symbol, new_symbol, new_color, substitute_position + 1)
