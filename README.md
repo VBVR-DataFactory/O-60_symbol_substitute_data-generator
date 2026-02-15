@@ -65,9 +65,8 @@ python examples/generate.py --num-samples 100 --output data/my_output
 ### Prompt
 
 ```
-Substitute ♦ at position 1 with a red ◯. The animation shows the old symbol fading out completely, then the new symbol gradually fading in at the same position.
+Substitute □ at position 7 with a orange ●. The animation shows the old symbol fading out completely, then the new symbol gradually fading in at the same position.
 ```
-
 ### Visual
 
 <table>
@@ -116,15 +115,14 @@ Substitute a symbol at a specific position with a new symbol, with the animation
 ## 📦 Data Format
 
 ```
-data/questions/symbol_substitute_task/
-├── symbol_substitute_0000/
-│   ├── first_frame.png          # Initial state (sequence with symbol to replace)
-│   ├── final_frame.png          # Goal state (sequence after substitution)
-│   ├── prompt.txt               # Task instructions
-│   └── ground_truth.mp4         # Solution video (16 fps)
-├── symbol_substitute_0001/
-│   └── ...
+data/questions/symbol_substitute_task/symbol_substitute_00000000/
+├── first_frame.png      # Initial state (sequence with symbol to replace)
+├── final_frame.png      # Goal state (sequence after substitution)
+├── prompt.txt           # Task instructions
+├── ground_truth.mp4     # Solution video (16 fps)
+└── question_metadata.json # Task metadata
 ```
+
 
 **File specifications**: Images are 1024×1024 PNG. Videos are MP4 at 16 fps, approximately 2-3 seconds long.
 

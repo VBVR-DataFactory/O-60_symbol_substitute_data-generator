@@ -91,6 +91,20 @@ class SymbolSubstituteGenerator(BaseGenerator):
         
         # Get prompt (1-indexed position, old symbol identified by position, new symbol with color)
         prompt = get_prompt(old_symbol, new_symbol, new_color, substitute_position + 1)
+
+        # Build object-centric metadata
+        optimized_task_data = self._build_objects_metadata(
+            initial_sequence=sequence,
+            final_sequence=final_sequence,
+            substitute_position=substitute_position,
+            old_symbol=old_symbol,
+            old_color=old_color,
+            new_symbol=new_symbol,
+            new_color=new_color
+        )
+        
+        # Build metadata
+        metadata = self._build_metadata(task_id, optimized_task_data)
         
         return TaskPair(
             task_id=task_id,
@@ -98,7 +112,8 @@ class SymbolSubstituteGenerator(BaseGenerator):
             prompt=prompt,
             first_image=first_image,
             final_image=final_image,
-            ground_truth_video=video_path
+            ground_truth_video=video_path,
+            metadata=metadata
         )
 
     def _render_sequence(self, sequence: List[Tuple[str, str]]) -> Image.Image:
@@ -348,3 +363,77 @@ class SymbolSubstituteGenerator(BaseGenerator):
         img = img.convert('RGB')
 
         return img
+
+    # ══════════════════════════════════════════════════════════════════════════
+    #  METADATA BUILDING
+    # ══════════════════════════════════════════════════════════════════════════
+    
+    def _build_objects_metadata(
+        self,
+        initial_sequence: List[Tuple[str, str]],
+        final_sequence: List[Tuple[str, str]],
+        substitute_position: int,
+        old_symbol: str,
+        old_color: str,
+        new_symbol: str,
+        new_color: str
+    ) -> dict:
+        """
+        Build object-centric metadata for symbol substitute task.
+        
+        Args:
+            initial_sequence: Initial sequence of (symbol, color_name) tuples
+            final_sequence: Final sequence after substitution
+            substitute_position: 0-indexed position of substituted symbol
+            old_symbol: Original symbol that was replaced
+            old_color: Original color name
+            new_symbol: New symbol that replaced the old one
+            new_color: New color name
+            
+        Returns:
+            Dictionary with object-centric metadata
+        """
+        from typing import Dict, Any
+        from .config import ALL_COLORS
+        
+        # Create objects for each symbol in the sequence
+        objects = []
+        for i, (symbol, color_name) in enumerate(initial_sequence):
+            color_rgb = ALL_COLORS.get(color_name, (0, 0, 0))
+            is_substituted = (i == substitute_position)
+            
+            obj = {
+                "symbol": f"symbol_{i}",
+                "index": i,
+                "initial_symbol": symbol,
+                "initial_color_name": color_name,
+                "initial_color_rgb": list(color_rgb),
+                "is_substituted": is_substituted
+            }
+            
+            # Add final symbol/color information
+            if is_substituted:
+                obj["final_symbol"] = new_symbol
+                obj["final_color_name"] = new_color
+                obj["final_color_rgb"] = list(ALL_COLORS.get(new_color, (0, 0, 0)))
+            else:
+                obj["final_symbol"] = symbol
+                obj["final_color_name"] = color_name
+                obj["final_color_rgb"] = list(color_rgb)
+            
+            objects.append(obj)
+        
+        # Build task-specific metadata
+        optimized_task_data = {
+            "sequence_length": len(initial_sequence),
+            "substitute_position": substitute_position,
+            "old_symbol": old_symbol,
+            "old_color_name": old_color,
+            "old_color_rgb": list(ALL_COLORS.get(old_color, (0, 0, 0))),
+            "new_symbol": new_symbol,
+            "new_color_name": new_color,
+            "new_color_rgb": list(ALL_COLORS.get(new_color, (0, 0, 0))),
+            "objects": objects
+        }
+        
+        return optimized_task_data
