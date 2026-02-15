@@ -37,7 +37,7 @@ class VideoGenerator:
         self.fps = fps
         self.output_format = output_format
         
-        # Use H.264 for mp4 (better compatibility) or XVID for avi
+        # Use mp4v for mp4 (standard MP4 codec) or XVID for avi
         if output_format == "mp4":
             # Try multiple H.264 codecs before falling back to mp4v
             self.codec = self._select_codec()
@@ -59,10 +59,10 @@ class VideoGenerator:
         Select the best available video codec (H.264 preferred).
         Try multiple H.264 codec names before falling back to mp4v.
         """
-        # Try H.264 codecs in order of preference (better compatibility, no green screen)
-        h264_codecs = ['avc1', 'H264', 'X264']
+        # Try standard MP4 codecs in order of preference
+        codecs_to_try = ['mp4v', 'XVID']
         
-        for codec_name in h264_codecs:
+        for codec_name in codecs_to_try:
             try:
                 fourcc = cv2.VideoWriter_fourcc(*codec_name)
                 # Test if codec is available by creating a dummy writer
@@ -79,7 +79,7 @@ class VideoGenerator:
             except Exception:
                 continue
         
-        # Fallback to mp4v if no H.264 codec available
+        # Fallback to mp4v if no codec available
         return 'mp4v'
     
     def create_video_from_frames(

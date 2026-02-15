@@ -1,1 +1,1 @@
-Substitute ♦ at position 1 with a red ◯. The animation shows the old symbol fading out completely, then the new symbol gradually fading in at the same position.
+Substitute □ at position 7 with a orange ●. The animation shows the old symbol fading out completely, then the new symbol gradually fading in at the same position.
