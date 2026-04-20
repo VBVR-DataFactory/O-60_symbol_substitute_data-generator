@@ -42,6 +42,12 @@ class SymbolSubstituteGenerator(BaseGenerator):
         self.all_color_names = list(ALL_COLORS.keys())
         self.rainbow_color_names = list(RAINBOW_COLORS.keys())
 
+    def _centered_start_x(self, center_x: int, slot_count: int, spacing: int) -> int:
+        """Return x of the first slot center so the row is centered."""
+        if slot_count <= 1:
+            return center_x
+        return int(round(center_x - ((slot_count - 1) * spacing) / 2.0))
+
     def generate_task_pair(self, task_id: str) -> TaskPair:
         """Generate one symbol substitution task with colored symbols."""
         # Generate initial sequence (now with colors, allowing duplicate symbol types)
@@ -128,8 +134,7 @@ class SymbolSubstituteGenerator(BaseGenerator):
         # Calculate symbol spacing
         symbol_size = self.config.symbol_size
         spacing = symbol_size + 20
-        total_width = len(sequence) * spacing - 20
-        start_x = (width - total_width) // 2
+        start_x = self._centered_start_x(width // 2, len(sequence), spacing)
         center_y = height // 2
         symbol_center_y = center_y
 
@@ -302,8 +307,7 @@ class SymbolSubstituteGenerator(BaseGenerator):
         symbol_size = self.config.symbol_size
         spacing = symbol_size + 20
         slot_count = max(len(initial_seq), len(final_seq))
-        total_width = slot_count * spacing - 20
-        fixed_start_x = (width - total_width) // 2  # Fixed for entire animation
+        fixed_start_x = self._centered_start_x(width // 2, slot_count, spacing)
 
         # Show initial sequence (using fixed position)
         frames.extend(
