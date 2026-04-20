@@ -20,6 +20,7 @@
 # Unified prompt template (position identifies old symbol, color describes new symbol)
 PROMPT_TEMPLATE = (
     "Substitute {old_symbol} at position {position} with a {new_color} {new_symbol}. "
+    "A reference panel in the top-right shows the target symbol. "
     "The animation shows the old symbol fading out completely, "
     "then the new symbol gradually fading in at the same position."
 )

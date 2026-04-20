@@ -131,6 +131,7 @@ class SymbolSubstituteGenerator(BaseGenerator):
         total_width = len(sequence) * spacing - 20
         start_x = (width - total_width) // 2
         center_y = height // 2
+        symbol_center_y = center_y
 
         # Load font - try fonts with good Unicode symbol support
         font_size = symbol_size
@@ -140,11 +141,18 @@ class SymbolSubstituteGenerator(BaseGenerator):
         for i, (symbol_type, color_name) in enumerate(sequence):
             x = start_x + i * spacing
             rgb_color = ALL_COLORS[color_name]
-            self._draw_symbol(draw, symbol_type, x, center_y, symbol_size, rgb_color, font)
+            self._draw_symbol(draw, symbol_type, x, symbol_center_y, symbol_size, rgb_color, font)
+        self._draw_add_candidate_panel(draw, symbol_size)
 
         return img
 
-    def _render_sequence_fixed(self, sequence: List[Tuple[str, str]], fixed_start_x: int) -> Image.Image:
+    def _render_sequence_fixed(
+        self,
+        sequence: List[Tuple[str, str]],
+        fixed_start_x: int,
+        slot_count: int,
+        highlight_slot: Optional[int] = None,
+    ) -> Image.Image:
         """Render a sequence of colored symbols using a fixed starting position (prevents jumping)."""
         width, height = self.config.image_size
         img = Image.new("RGB", (width, height), self.bg_color)
@@ -157,33 +165,86 @@ class SymbolSubstituteGenerator(BaseGenerator):
         symbol_size = self.config.symbol_size
         spacing = symbol_size + 20
         center_y = height // 2
+        symbol_center_y = center_y
 
         # Load font - try fonts with good Unicode symbol support
         font_size = symbol_size
         font = self._get_unicode_font(font_size)
 
+        self._draw_position_slots_unicode(
+            draw, slot_count, fixed_start_x, spacing, center_y, symbol_size, highlight_slot
+        )
+        self._draw_add_candidate_panel(draw, symbol_size)
+
         # Draw each symbol using fixed start position
         for i, (symbol_type, color_name) in enumerate(sequence):
             x = fixed_start_x + i * spacing
             rgb_color = ALL_COLORS[color_name]
-            self._draw_symbol(draw, symbol_type, x, center_y, symbol_size, rgb_color, font)
+            self._draw_symbol(draw, symbol_type, x, symbol_center_y, symbol_size, rgb_color, font)
 
         return img
 
     def _draw_symbol(self, draw: ImageDraw.Draw, symbol: str, x: int, y: int,
                     size: int, color: tuple, font: ImageFont.FreeTypeFont):
         """Draw a single symbol at position (x, y)."""
-        # Get text bounding box
-        bbox = draw.textbbox((0, 0), symbol, font=font)
-        text_width = bbox[2] - bbox[0]
-        text_height = bbox[3] - bbox[1]
-
-        # Center the text
-        text_x = x - text_width // 2
-        text_y = y - text_height // 2
+        max_side = max(12, size - 12)
+        fit_font, bbox = self._fit_symbol_font(draw, symbol, font, max_side, max_side)
+        # Center using real glyph bbox (handles Unicode baseline offsets)
+        text_x = int(round(x - (bbox[0] + bbox[2]) / 2))
+        text_y = int(round(y - (bbox[1] + bbox[3]) / 2))
+        dx, dy = self._get_optical_center_offset(symbol, fit_font)
+        text_x += dx
+        text_y += dy
 
         # Draw the symbol
-        draw.text((text_x, text_y), symbol, fill=color, font=font)
+        draw.text((text_x, text_y), symbol, fill=color, font=fit_font)
+
+    def _get_optical_center_offset(self, symbol: str, font: ImageFont.FreeTypeFont) -> tuple[int, int]:
+        """Measure rendered ink center and return correction offset."""
+        if not hasattr(self, "_optical_center_cache"):
+            self._optical_center_cache = {}
+        key = (symbol, getattr(font, "size", 0))
+        if key in self._optical_center_cache:
+            return self._optical_center_cache[key]
+
+        canvas = max(64, int(getattr(font, "size", 32) * 4))
+        tmp = Image.new("L", (canvas, canvas), 0)
+        tmp_draw = ImageDraw.Draw(tmp)
+        bbox = tmp_draw.textbbox((0, 0), symbol, font=font)
+        tx = int(round(canvas / 2 - (bbox[0] + bbox[2]) / 2))
+        ty = int(round(canvas / 2 - (bbox[1] + bbox[3]) / 2))
+        tmp_draw.text((tx, ty), symbol, fill=255, font=font)
+        ink_bbox = tmp.getbbox()
+        if ink_bbox is None:
+            self._optical_center_cache[key] = (0, 0)
+            return (0, 0)
+
+        ink_cx = (ink_bbox[0] + ink_bbox[2]) / 2
+        ink_cy = (ink_bbox[1] + ink_bbox[3]) / 2
+        dx = int(round(canvas / 2 - ink_cx))
+        dy = int(round(canvas / 2 - ink_cy))
+        self._optical_center_cache[key] = (dx, dy)
+        return (dx, dy)
+
+    def _fit_symbol_font(
+        self,
+        draw: ImageDraw.Draw,
+        symbol: str,
+        base_font: ImageFont.FreeTypeFont,
+        max_width: int,
+        max_height: int,
+    ) -> tuple[ImageFont.FreeTypeFont, tuple]:
+        """Pick the largest font that keeps glyph fully inside slot bounds."""
+        start_size = getattr(base_font, "size", self.config.symbol_size)
+        for sz in range(start_size, 7, -1):
+            f = self._get_unicode_font(sz)
+            bbox = draw.textbbox((0, 0), symbol, font=f)
+            tw = bbox[2] - bbox[0]
+            th = bbox[3] - bbox[1]
+            if tw <= max_width and th <= max_height:
+                return f, bbox
+        fallback = self._get_unicode_font(8)
+        return fallback, draw.textbbox((0, 0), symbol, font=fallback)
 
     def _get_unicode_font(self, font_size: int) -> ImageFont.FreeTypeFont:
         """Get a font that supports Unicode symbols well."""
@@ -233,42 +294,106 @@ class SymbolSubstituteGenerator(BaseGenerator):
                                  fadein_frames: int = 6) -> List[Image.Image]:
         """Create animation frames for symbol substitution: fade-out then fade-in (clean process)."""
         frames = []
+        self._candidate_add_symbol = new_symbol
+        self._candidate_add_color = ALL_COLORS[new_color]
         
         # Calculate fixed center position (prevents any jumping)
         width, height = self.config.image_size
         symbol_size = self.config.symbol_size
         spacing = symbol_size + 20
-        total_width = len(initial_seq) * spacing - 20
+        slot_count = max(len(initial_seq), len(final_seq))
+        total_width = slot_count * spacing - 20
         fixed_start_x = (width - total_width) // 2  # Fixed for entire animation
 
         # Show initial sequence (using fixed position)
-        frames.extend([self._render_sequence_fixed(initial_seq, fixed_start_x)] * hold_frames)
+        frames.extend(
+            [self._render_sequence_fixed(initial_seq, fixed_start_x, slot_count, substitute_pos)] * hold_frames
+        )
 
         # Phase 1: Fade out old symbol (only the target symbol disappears)
         for i in range(fadeout_frames):
-            progress = (i + 1) / fadeout_frames
-            frame = self._render_fadeout_frame(initial_seq, substitute_pos, progress, fixed_start_x)
+            progress = i / max(1, fadeout_frames - 1)
+            frame = self._render_fadeout_frame(
+                initial_seq, substitute_pos, progress, fixed_start_x, slot_count
+            )
             frames.append(frame)
 
         # Phase 2: Fade in new symbol (new symbol gradually appears)
         for i in range(fadein_frames):
-            progress = (i + 1) / fadein_frames
+            progress = i / max(1, fadein_frames - 1)
             frame = self._render_fadein_frame(initial_seq, new_symbol, new_color, substitute_pos, 
-                                             progress, fixed_start_x)
+                                             progress, fixed_start_x, slot_count)
             frames.append(frame)
 
         # Show final sequence (using fixed position)
-        frames.extend([self._render_sequence_fixed(final_seq, fixed_start_x)] * hold_frames)
+        frames.extend(
+            [self._render_sequence_fixed(final_seq, fixed_start_x, slot_count, None)] * hold_frames
+        )
 
         return frames
 
+    def _draw_position_slots_unicode(
+        self,
+        draw: ImageDraw.Draw,
+        total_slots: int,
+        start_x: int,
+        spacing: int,
+        center_y: int,
+        symbol_size: int,
+        highlight_index: Optional[int],
+    ) -> None:
+        slot_gap = 8
+        half = max(symbol_size // 2 + 4, (spacing - slot_gap) // 2)
+        try:
+            label_font = ImageFont.truetype(
+                "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 28
+            )
+        except OSError:
+            try:
+                label_font = ImageFont.truetype("/System/Library/Fonts/Supplemental/Arial.ttf", 28)
+            except OSError:
+                label_font = ImageFont.load_default()
+        for i in range(total_slots):
+            cx = start_x + i * spacing
+            box = [cx - half, center_y - half, cx + half, center_y + half]
+            if highlight_index is not None and i == highlight_index:
+                draw.rectangle(box, outline=(220, 70, 55), width=4)
+            else:
+                draw.rectangle(box, outline=(170, 170, 170), width=1)
+            lab = str(i + 1)
+            bbox = draw.textbbox((0, 0), lab, font=label_font)
+            tw, th = bbox[2] - bbox[0], bbox[3] - bbox[1]
+            draw.text((cx - tw // 2, center_y + half + 20), lab, fill=(70, 70, 70), font=label_font)
+
+    def _draw_add_candidate_panel(self, draw: ImageDraw.Draw, symbol_size: int) -> None:
+        symbol = getattr(self, "_candidate_add_symbol", None)
+        color = getattr(self, "_candidate_add_color", None)
+        if symbol is None or color is None:
+            return
+
+        width, _ = self.config.image_size
+        panel_w = max(90, symbol_size + 34)
+        panel_h = max(90, symbol_size + 34)
+        margin = 18
+        left = width - panel_w - margin
+        top = margin
+        right = left + panel_w
+        bottom = top + panel_h
+
+        draw.rectangle([left, top, right, bottom], outline=(165, 165, 165), width=1, fill=(255, 255, 255))
+        cx = left + panel_w // 2
+        cy = top + panel_h // 2
+        font = self._get_unicode_font(symbol_size)
+        self._draw_symbol(draw, symbol, cx, cy, symbol_size, color, font)
+
     def _render_fadeout_frame(self, sequence: List[Tuple[str, str]], substitute_pos: int,
-                              progress: float, fixed_start_x: int) -> Image.Image:
+                              progress: float, fixed_start_x: int, slot_count: int) -> Image.Image:
         """Render frame with old symbol fading out (only target symbol changes)."""
         width, height = self.config.image_size
         symbol_size = self.config.symbol_size
         spacing = symbol_size + 20
         center_y = height // 2
+        symbol_center_y = center_y
 
         # Create base image
         img = Image.new('RGB', (width, height), self.bg_color)
@@ -278,12 +403,17 @@ class SymbolSubstituteGenerator(BaseGenerator):
         font_size = symbol_size
         font = self._get_unicode_font(font_size)
 
+        self._draw_position_slots_unicode(
+            draw, slot_count, fixed_start_x, spacing, center_y, symbol_size, substitute_pos
+        )
+        self._draw_add_candidate_panel(draw, symbol_size)
+
         # STEP 1: Draw all normal symbols FIRST (not the fading one)
         for i, (symbol_type, color_name) in enumerate(sequence):
             if i != substitute_pos:
                 x = fixed_start_x + i * spacing
                 rgb_color = ALL_COLORS[color_name]
-                self._draw_symbol(draw, symbol_type, x, center_y, symbol_size, rgb_color, font)
+                self._draw_symbol(draw, symbol_type, x, symbol_center_y, symbol_size, rgb_color, font)
 
         # STEP 2: Now handle the fading symbol with alpha composite
         if substitute_pos < len(sequence):
@@ -296,16 +426,19 @@ class SymbolSubstituteGenerator(BaseGenerator):
             overlay_draw = ImageDraw.Draw(overlay)
 
             # Get text bounding box for centering
-            bbox = overlay_draw.textbbox((0, 0), symbol_type, font=font)
-            text_width = bbox[2] - bbox[0]
-            text_height = bbox[3] - bbox[1]
-            text_x = x - text_width // 2
-            text_y = center_y - text_height // 2
+            fit_font, bbox = self._fit_symbol_font(
+                overlay_draw, symbol_type, font, max(12, symbol_size - 12), max(12, symbol_size - 12)
+            )
+            text_x = int(round(x - (bbox[0] + bbox[2]) / 2))
+            text_y = int(round(symbol_center_y - (bbox[1] + bbox[3]) / 2))
+            dx, dy = self._get_optical_center_offset(symbol_type, fit_font)
+            text_x += dx
+            text_y += dy
 
             # Draw old symbol with fading alpha
             rgb_color = ALL_COLORS[color_name]
             rgba_color = (*rgb_color, alpha)
-            overlay_draw.text((text_x, text_y), symbol_type, fill=rgba_color, font=font)
+            overlay_draw.text((text_x, text_y), symbol_type, fill=rgba_color, font=fit_font)
 
             # Composite
             img = img.convert('RGBA')
@@ -315,12 +448,13 @@ class SymbolSubstituteGenerator(BaseGenerator):
         return img
 
     def _render_fadein_frame(self, sequence: List[Tuple[str, str]], new_symbol: str, new_color: str,
-                            substitute_pos: int, progress: float, fixed_start_x: int) -> Image.Image:
+                            substitute_pos: int, progress: float, fixed_start_x: int, slot_count: int) -> Image.Image:
         """Render frame with new symbol fading in (only target symbol changes)."""
         width, height = self.config.image_size
         symbol_size = self.config.symbol_size
         spacing = symbol_size + 20
         center_y = height // 2
+        symbol_center_y = center_y
 
         # Create base image
         img = Image.new('RGB', (width, height), self.bg_color)
@@ -330,12 +464,17 @@ class SymbolSubstituteGenerator(BaseGenerator):
         font_size = symbol_size
         font = self._get_unicode_font(font_size)
 
+        self._draw_position_slots_unicode(
+            draw, slot_count, fixed_start_x, spacing, center_y, symbol_size, substitute_pos
+        )
+        self._draw_add_candidate_panel(draw, symbol_size)
+
         # STEP 1: Draw all normal symbols FIRST (not the position being substituted)
         for i, (symbol_type, color_name) in enumerate(sequence):
             if i != substitute_pos:
                 x = fixed_start_x + i * spacing
                 rgb_color = ALL_COLORS[color_name]
-                self._draw_symbol(draw, symbol_type, x, center_y, symbol_size, rgb_color, font)
+                self._draw_symbol(draw, symbol_type, x, symbol_center_y, symbol_size, rgb_color, font)
 
         # STEP 2: Now handle the fading-in new symbol with alpha composite
         x = fixed_start_x + substitute_pos * spacing
@@ -346,16 +485,19 @@ class SymbolSubstituteGenerator(BaseGenerator):
         overlay_draw = ImageDraw.Draw(overlay)
 
         # Get text bounding box for centering
-        bbox = overlay_draw.textbbox((0, 0), new_symbol, font=font)
-        text_width = bbox[2] - bbox[0]
-        text_height = bbox[3] - bbox[1]
-        text_x = x - text_width // 2
-        text_y = center_y - text_height // 2
+        fit_font, bbox = self._fit_symbol_font(
+            overlay_draw, new_symbol, font, max(12, symbol_size - 12), max(12, symbol_size - 12)
+        )
+        text_x = int(round(x - (bbox[0] + bbox[2]) / 2))
+        text_y = int(round(symbol_center_y - (bbox[1] + bbox[3]) / 2))
+        dx, dy = self._get_optical_center_offset(new_symbol, fit_font)
+        text_x += dx
+        text_y += dy
 
         # Draw new symbol with fading in alpha
         rgb_color = ALL_COLORS[new_color]
         rgba_color = (*rgb_color, alpha)
-        overlay_draw.text((text_x, text_y), new_symbol, fill=rgba_color, font=font)
+        overlay_draw.text((text_x, text_y), new_symbol, fill=rgba_color, font=fit_font)
 
         # Composite
         img = img.convert('RGBA')
@@ -405,10 +547,12 @@ class SymbolSubstituteGenerator(BaseGenerator):
             obj = {
                 "symbol": f"symbol_{i}",
                 "index": i,
+                "slot_index": i,
                 "initial_symbol": symbol,
                 "initial_color_name": color_name,
                 "initial_color_rgb": list(color_rgb),
-                "is_substituted": is_substituted
+                "is_substituted": is_substituted,
+                "is_operation_target": is_substituted,
             }
             
             # Add final symbol/color information
