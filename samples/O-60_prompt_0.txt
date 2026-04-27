@@ -1,1 +1,1 @@
-Substitute ♦ at position 3 with a indigo ▲. A reference panel in the top-right shows the target symbol. The animation shows the old symbol fading out completely, then the new symbol gradually fading in at the same position.
+Substitute ▼ at position 5 with a green ★. A reference panel in the top-right shows the target symbol. The animation shows the old symbol fading out completely, then the new symbol gradually fading in at the same position.
